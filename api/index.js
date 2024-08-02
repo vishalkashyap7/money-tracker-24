@@ -1,7 +1,14 @@
 const express = require('express');
+const dotenv = require("dotenv");
+const mongoose = require("mongoose");
 
 const app = express();
 const PORT = 3000;
+mongoose.connect(process.env.MONGODB_URI).then(console.log("Connected to MongoDB")).catch(error => console.log(error));
+
+app.use(cors());
+dotenv.config();
+app.use(express.json());
 
 app.get('/', (req, res)=>{
     res.status(200);

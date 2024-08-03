@@ -1,7 +1,15 @@
 const express = require('express');
+const dotenv = require("dotenv");
+const mongoose = require("mongoose");
+const cors = require('cors');
+const cron = require('node-cron');
+const DataModel = require('./models/DataModel');
 
 const app = express();
 const PORT = 3000;
+app.use(cors());
+dotenv.config();
+app.use(express.json());
 
 mongoose.connect(process.env.MONGODB_URI).then(() => console.log("Connected to MongoDB")).catch(error => console.log(error));
 
@@ -25,8 +33,6 @@ async function fetchAndStoreData() {
         if (!Array.isArray(rawData)) {
             throw new Error('API response is not an array');
         }
-
-        // Top 5 coins
         const topCoins = rawData.slice(0, 5).map(coin => ({
             id: coin.id,
             symbol: coin.symbol,
@@ -36,7 +42,7 @@ async function fetchAndStoreData() {
             last_updated: new Date(coin.last_updated)
         }));
 
-        // Create a new document
+
         const document = new DataModel({
             fetched_at: new Date(),
             coins: topCoins
@@ -60,12 +66,13 @@ async function fetchAndStoreData() {
             // console.log(`Deleted ${idsToDelete.length} old documents.`);
         }
 
+        await document.save();
+
         console.log('Top 5 coins data successfully saved to MongoDB');
     } catch (error) {
         console.error('Error fetching or saving data:', error);
     }
 }
-
 
 async function handler(req, res) {
     try {
@@ -89,10 +96,26 @@ app.get('/', (req, res) => {
     res.status(200).send("Welcome to the root URL of the Server");
 });
 
-app.listen(PORT, (error) =>{
-        if(!error)
-            console.log("Server is Successfully Running, and App is listening on port "+ PORT)
-        else 
-            console.log("Error occurred, server can't start", error);
+// Returns data.
+app.get('/all-data', async (req, res) => {
+    try {
+        const allData = await DataModel.find().exec();
+
+        if (!allData || allData.length === 0) {
+            return res.status(404).json({ message: 'No data found' });
+        }
+
+        // Return all data.
+        res.json(allData);
+    } catch (error) {
+        console.error('Error fetching data:', error);
+        res.status(500).json({ message: 'Internal server error' });
     }
-);
+});
+
+app.listen(PORT, (error) => {
+    if (!error)
+        console.log("Server is Successfully Running, and App is listening on port " + PORT);
+    else
+        console.log("Error occurred, server can't start", error);
+});

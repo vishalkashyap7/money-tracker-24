@@ -3,9 +3,90 @@ const express = require('express');
 const app = express();
 const PORT = 3000;
 
-app.get('/', (req, res)=>{
-    res.status(200);
-    res.send("Welcome to root URL of Server");
+mongoose.connect(process.env.MONGODB_URI).then(() => console.log("Connected to MongoDB")).catch(error => console.log(error));
+
+async function fetchData() {
+    let suffix = "/coins/markets?vs_currency=inr&page=1";
+    const response = await fetch(`${process.env.COINGECKO_URI}${suffix}`);
+    const data = await response.json();
+    return data;
+}
+
+async function fetchAndStoreData() {
+    try {
+        let suffix = "/coins/markets?vs_currency=inr&page=1";
+        const response = await fetch(`${process.env.COINGECKO_URI}${suffix}`);
+        const rawData = await response.json();
+
+        // Log the raw data to understand its structure
+        // console.log('API Response:', rawData);
+
+        // Ensure rawData is an array
+        if (!Array.isArray(rawData)) {
+            throw new Error('API response is not an array');
+        }
+
+        // Top 5 coins
+        const topCoins = rawData.slice(0, 5).map(coin => ({
+            id: coin.id,
+            symbol: coin.symbol,
+            name: coin.name,
+            image: coin.image,
+            current_price: coin.current_price,
+            last_updated: new Date(coin.last_updated)
+        }));
+
+        // Create a new document
+        const document = new DataModel({
+            fetched_at: new Date(),
+            coins: topCoins
+        });
+
+        // Save the new document
+        await document.save();
+
+        // Ensure only the latest 20 documents are kept
+        const count = await DataModel.countDocuments();
+        if (count > 20) {
+            // Find documents to delete
+            const documentsToDelete = await DataModel.find()
+                .sort({ fetched_at: 1 }) // Sort by fetched_at in ascending order
+                .limit(count - 20); // Get the documents to delete
+
+            const idsToDelete = documentsToDelete.map(doc => doc._id);
+
+            // Delete the old documents
+            await DataModel.deleteMany({ _id: { $in: idsToDelete } });
+            // console.log(`Deleted ${idsToDelete.length} old documents.`);
+        }
+
+        console.log('Top 5 coins data successfully saved to MongoDB');
+    } catch (error) {
+        console.error('Error fetching or saving data:', error);
+    }
+}
+
+
+async function handler(req, res) {
+    try {
+        console.log("Fetching started");
+        await fetchAndStoreData()
+        res.status(200).json({ message: 'Data fetched and stored in MongoDB' });
+    } catch (err) {
+        res.status(500).json({ message: 'Error', error: err.message });
+    }
+}
+
+async function cleanupOldEntries() {
+    const cutoffDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours
+    await Price.deleteMany({ timestamp: { $lt: cutoffDate } });
+}
+
+// Fetched data.
+app.get('/fetch-data', handler);
+
+app.get('/', (req, res) => {
+    res.status(200).send("Welcome to the root URL of the Server");
 });
 
 app.listen(PORT, (error) =>{
